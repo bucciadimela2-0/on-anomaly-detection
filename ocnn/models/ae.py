@@ -1,4 +1,3 @@
-# models/autoencoder.py
 
 import torch
 import torch.nn as nn
@@ -24,7 +23,7 @@ class ConvEncoder(nn.Module):
                 nn.LeakyReLU(0.1, inplace=True),
                 nn.MaxPool2d(2, stride=2),
 
-                # Rimaniamo su 7x7, due conv extra (come profondità aggiuntiva)
+                # Rimaniamo su 7x7
                 nn.Conv2d(8, 8, kernel_size=3, padding=1, bias=False),
                 nn.BatchNorm2d(8),
                 nn.LeakyReLU(0.1, inplace=True),
@@ -35,7 +34,7 @@ class ConvEncoder(nn.Module):
             )
 
         elif dataset == "cifar10":
-            # ramo CIFAR10 come ce l’avevamo prima
+            
             in_ch = 3
             self.encoder = nn.Sequential(
                 nn.Conv2d(in_ch, 128, kernel_size=3, padding=1, bias=False),
@@ -124,15 +123,9 @@ class ConvDecoder(nn.Module):
 
 
 class ConvAutoencoder(nn.Module):
-    """
-    Wrapper encoder+decoder, flessibile per MNIST e CIFAR-10.
-    Espone metodi:
-      - forward(x): ricostruzione
-      - encode(x): feature dal solo encoder
-      - decode(z): ricostruzione da feature
-      - get_encoder(freeze: bool): restituisce il modulo encoder (opzionale freeze)
-      - get_decoder(freeze: bool): restituisce il modulo decoder
-    """
+    
+   # Wrapper encoder+decoder, flessibile per MNIST e CIFAR-10.
+   
     def __init__(self, dataset: str = "mnist"):
         super().__init__()
         self.dataset = dataset.lower()
@@ -144,31 +137,24 @@ class ConvAutoencoder(nn.Module):
         x_rec = self.decoder(z)
         return x_rec
 
-    # --- Metodi di comodo per OC-NN / Deep SVDD ---
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
-        """Restituisce la rappresentazione latente prodotta dall'encoder."""
+       
         return self.encoder(x)
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
-        """Ricostruisce un input a partire dalla rappresentazione latente."""
+        
         return self.decoder(z)
 
     def get_encoder(self, freeze: bool = False) -> nn.Module:
-        """
-        Restituisce il modulo encoder da usare come feature extractor.
-        Se freeze=True, congela i pesi (requires_grad=False).
-        """
+      
         if freeze:
             for p in self.encoder.parameters():
                 p.requires_grad = False
         return self.encoder
 
     def get_decoder(self, freeze: bool = False) -> nn.Module:
-        """
-        Restituisce il modulo decoder.
-        Se freeze=True, congela i pesi.
-        """
+      
         if freeze:
             for p in self.decoder.parameters():
                 p.requires_grad = False
