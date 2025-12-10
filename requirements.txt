@@ -1,2 +1,4 @@
 wandb
 torch
+numpy
+scikit-learn
