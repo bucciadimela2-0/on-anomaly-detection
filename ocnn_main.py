@@ -91,8 +91,7 @@ if __name__ == "__main__":
     # ----------------------------
     # Config
     # ----------------------------
-    # Unifichiamo il concetto di "classe normale" in normal_class,
-    # ma manteniamo anche normal_digit per compatibilità (MNIST pipeline).
+    
     cfg = Config(
         dataset=args.dataset,
         normal_digit=args.normal_digit,

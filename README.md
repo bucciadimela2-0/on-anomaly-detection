@@ -169,3 +169,35 @@ The bottom row shows the *most anomalous* samples within the same class. Althoug
 </p>
 
 </details>
+
+ ## 🧪 Experiment 2 — SVDD
+In this experiment we evaluate Deep Support Vector Data Description (DeepSVDD) as a deep one-class objective for anomaly detection on MNIST and CIFAR-10.
+Starting from a latent representation z ∈ ℝᵈ learned by an Autoencoder (AE) or Robust Convolutional Autoencoder (RCAE), DeepSVDD learns a representation that maps normal data close to a hypersphere center c in latent space.
+The anomaly score is defined as the (squared) distance of a sample from the center c. Two training objectives are considered:
+One-class DeepSVDD, which minimizes the average distance to the center;
+Soft-boundary DeepSVDD, which additionally learns a radius R such that a fraction ν of samples is allowed to lie outside the hypersphere.
+The center c is initialized as the mean of latent representations computed on the training set, and the network is optimized to compact normal samples while pushing anomalies away.
+>Goal.
+>Learn a compact representation of normal data in latent space, such that deviations from this compact region can be effectively identified as anomalies.
+
+<details> <summary>Results on MNIST</summary>
+
+| Method | Digit | ν | AUROC | 
+|------|-------|----|-------|
+| RCAE + DEEP SVDD (normal) | 0 | 0.01 | 0.9905 | 
+| RCAE + DEEP SVDD (softbound) | 0 | 0.01 | 0.9788 | 
+| RCAE + DEEP SVDD (normal) | 1 | 0.01 | 0.9950 | 
+| RCAE + DEEP SVDD (softbound) | 1 | 0.01 | 0.9938 | 
+
+**Least vs most anomalous samples (normal class only).**  
+The following figure shows the most anomalous and least anomalous samples among the normal class, according to the DeepSVDD anomaly score (distance from the hypersphere center).
+
+<p align="center">
+  <img src="img/extremes_normals_mnist_svdd.png" width="600">
+</p>
+And Soft boundary results: 
+<p align="center">
+  <img src="img/extremes_normals_mnist_svdd_sb.png" width="600">
+</p>
+
+</details>

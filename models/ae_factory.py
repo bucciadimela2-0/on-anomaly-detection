@@ -14,12 +14,15 @@ def build_autoencoder(cfg: Config) -> torch.nn.Module:
         # Simple LeNet-like convolutional autoencoder
         from models.autoencoder1 import Autoencoder
         return Autoencoder()
-    if cfg.ae_arch == "autoencoder2":
+    elif cfg.ae_arch == "autoencoder2":
         # Deep SVDD-style autoencoder with configurable representation dimension
         from models.autoencoder2 import Autoencoder
         return Autoencoder(rep_dim=cfg.rep_dim)
     elif cfg.ae_arch == "autoencoder_cifar":
         from models.autoencoder_cifar import Autoencoder
+        return Autoencoder(rep_dim=cfg.rep_dim)
+    elif cfg.ae_arch == "autoencoder2_cifar":
+        from models.autoencoder2_cifar import Autoencoder
         return Autoencoder(rep_dim=cfg.rep_dim)
 
     elif cfg.ae_arch == "autoencoder3":

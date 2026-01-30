@@ -131,9 +131,9 @@ def run_pipeline(cfg: Config) -> None:
     # Build AE
     # -------------------------
     ae = build_autoencoder(cfg).to(device)
-    ae_ckpt_path = os.path.join(ckpt_dir, f"ae_{cfg.ae_mode}.pt")
+    #ae_ckpt_path = os.path.join(ckpt_dir, f"ae_{cfg.ae_mode}.pt")
     #ae_ckpt_path = "runs/cifar10_rcae_joint_digit0_nu0.1_20260130_002309/20260130_002309/checkpoints/ae_rcae.pt"
-    #ae_ckpt_path = "runs/cifar10_rcae_joint_digit1_nu0.1_20260130_082158/20260130_082158/checkpoints/ae_rcae.pt"
+    ae_ckpt_path = "runs/cifar10_rcae_joint_digit1_nu0.1_20260130_082158/20260130_082158/checkpoints/ae_rcae.pt"
     # ============================================================
     # PHASE 1: AE pretraining / loading
     # ============================================================
@@ -355,6 +355,8 @@ def run_pipeline(cfg: Config) -> None:
         k=8,
         score_name=score_name,
     )
+
+
 
     print(f"[DONE] r*={float(r_star):.6f} | AUROC={auc:.4f} | AP={ap:.4f}")
     print(f"[DONE] Saved plots -> {plots_dir}")
