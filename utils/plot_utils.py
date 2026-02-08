@@ -192,6 +192,7 @@ def plot_roc_curve(
     out_dir: str,
     filename: str = "roc_curve.png",
     anomaly_label: int = 1,
+    higher_score_more_anomalous: bool = False
 ) -> float:
     ensure_dir(out_dir)
 
@@ -199,6 +200,9 @@ def plot_roc_curve(
     y = labels.detach().cpu().numpy().reshape(-1)
 
     y_bin = (y == anomaly_label).astype(np.int32)
+
+    if not higher_score_more_anomalous:
+        s = -s
 
     fpr, tpr, _ = roc_curve(y_bin, s)
     auc = roc_auc_score(y_bin, s)
@@ -214,32 +218,3 @@ def plot_roc_curve(
 
     return float(auc)
 
-
-# Plot Precision–Recall curve and return Average Precision
-def plot_pr_curve(
-    anom_scores: torch.Tensor,
-    labels: torch.Tensor,
-    out_dir: str,
-    filename: str = "pr_curve.png",
-    anomaly_label: int = 1,
-) -> float:
-    ensure_dir(out_dir)
-
-    s = anom_scores.detach().cpu().numpy().reshape(-1)
-    y = labels.detach().cpu().numpy().reshape(-1)
-
-    y_bin = (y == anomaly_label).astype(np.int32)
-
-    precision, recall, _ = precision_recall_curve(y_bin, s)
-    ap = average_precision_score(y_bin, s)
-
-    plt.figure()
-    plt.plot(recall, precision)
-    plt.xlabel("Recall")
-    plt.ylabel("Precision")
-    plt.title(f"Precision–Recall curve (AP = {ap:.4f})")
-    plt.grid(True)
-    plt.savefig(os.path.join(out_dir, filename), dpi=200, bbox_inches="tight")
-    plt.close()
-
-    return float(ap)

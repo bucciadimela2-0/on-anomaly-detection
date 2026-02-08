@@ -21,22 +21,16 @@ class Config:
     ocnn_joint: bool = False
 
     # Autoencoder
-    # "autoencoder1" | "autoencoder2" | "autoencoder3"
+    # "autoencoder1" | "autoencoder2" | "autoencoder_cifar"
     ae_arch: str = Const.ae_arch
     rep_dim: int = Const.LATENT_DIM
 
-    # "rcae" | "simple"
-    ae_mode: str = "rcae"
 
     ae_epochs: int = Const.AE_EPOCHS
     ae_lr: float = Const.AE_LR
     ae_weight_decay: float = 0.0
     ae_batch_size: int = Const.AE_BATCH_SIZE
 
-    # Robust CAE
-    lamda_set: Tuple[float, ...] = Const.LAMBDA_SET
-    rcae_outer_iters: int = 1
-    mue: float = Const.MUE
 
     # OCNN
     nu: float = Const.OCNN_NU
@@ -47,9 +41,11 @@ class Config:
     ocnn_lr_finetune: float = Const.OCNN_LR_FINETUNE
     finetune_start_epoch: int = Const.OCNN_FINETUNE_START_EPOCH
     ocnn_batch_size: int = Const.OCNN_BATCH_SIZE
+    ocnn_hidden_dim: int = Const.OCNN_HIDDEN_DIM
 
-    # Separate encoder LR during joint training (0.0 => frozen encoder)
-    lr_encoder_joint: float = 1e-5
+    # Separate encoder LR during joint training 
+    lr_encoder_joint: float = 1e-4
+
 
     # Runs / output
     seed: int = Const.SEED
@@ -57,22 +53,20 @@ class Config:
     ckpt_subdir: str = Const.CKPT_SUBDIR
     plots_subdir: str = Const.PLOTS_SUBDIR
 
-    # Weights & Biases
-    wandb: bool = Const.WANDB_ENABLED
-    wandb_project: str = Const.WANDB_PROJECT
+  
 
     # Deep SVDD
     svdd_objective: str = "one-class"   # "one-class" | "soft-boundary"
     svdd_nu: float = 0.1
-    svdd_epochs: int = 50
+    svdd_epochs: int = 150
     svdd_lr: float = 1e-4
 
-    # 0.0 => freeze encoder, >0 => fine-tune encoder
-    svdd_lr_encoder: float = 0.0
+    
+    svdd_lr_encoder: float = 1e-4
 
     svdd_weight_decay: float = 0.0
     svdd_warmup_epochs: int = 10
-    svdd_clip_norm: float = 0.5
+    svdd_clip_norm: float = 1.0
 
     # in Config
     dataset: str = "mnist"  # oppure "cifar10"

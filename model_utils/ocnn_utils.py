@@ -48,7 +48,6 @@ def extract_z(
     if encoder is None:
         raise ValueError("joint=True but encoder is None")
 
-    # Try common encoder interfaces; fallback to forward()
     if hasattr(encoder, "encode_flat"):
         z = encoder.encode_flat(data)
     elif hasattr(encoder, "encode"):
@@ -57,7 +56,11 @@ def extract_z(
         z = encoder(data)
     z = z.flatten(1) if z.dim() > 2 else z
 
-    z = F.normalize(z, p=2, dim=1)
+   
+    #z = F.layer_norm(z, z.shape[1:])
+    z = F.normalize(z, p=2, dim=1, eps=1e-8)  
+    
+    
     # Ensure [B, rep_dim]
     return  z
 
@@ -89,13 +92,7 @@ def collect_scores(
 
 # Update r as the nu-quantile of the score distribution (no gradient)
 @torch.no_grad()
-def r_from_quantile(
-    encoder: Optional[nn.Module],
-    ocnn: nn.Module,
-    loader: DataLoader,
-    device: torch.device,
-    nu: float,
-    joint: bool,
+def r_from_quantile(encoder: Optional[nn.Module],ocnn: nn.Module, loader: DataLoader, device: torch.device,nu: float,joint: bool,
 ) -> float:
     if not (0.0 < nu <= 1.0):
         raise ValueError(f"nu must be in (0,1], got {nu}")
@@ -105,30 +102,21 @@ def r_from_quantile(
         return 0.0
 
     return torch.quantile(scores, q=nu).item()
+   
 
-
-# Fraction of samples violating the constraint score >= r (no gradient)
 @torch.no_grad()
-def compute_violation(
-    encoder: Optional[nn.Module],
-    ocnn: nn.Module,
-    loader: DataLoader,
-    r: float,
-    device: torch.device,
-    joint: bool,
-) -> float:
+def compute_violation(encoder, ocnn, loader, r: float, device, joint) -> float:
     ocnn.eval()
     if encoder is not None:
         encoder.eval()
 
     n_total = 0
     n_viol = 0
-
     for data, _ in loader:
         data = data.to(device)
         z = extract_z(encoder, data, joint)
-        scores = ocnn(z)
+        scores = ocnn(z).view(-1)
+        r_t = scores.new_tensor(r)
         n_total += scores.numel()
-        n_viol += (scores < r).sum().item()
-
+        n_viol += (scores < r_t).sum().item()
     return n_viol / max(1, n_total)

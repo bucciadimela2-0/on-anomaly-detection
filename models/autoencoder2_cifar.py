@@ -83,7 +83,7 @@ class Decoder(nn.Module):
         return x
 
 
-class AutoencoderCIFAR10(nn.Module):
+class Autoencoder(nn.Module):
     def __init__(self, rep_dim: int = 128):
         super().__init__()
         self.encoder = Encoder(rep_dim=rep_dim)

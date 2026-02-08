@@ -102,13 +102,13 @@ def train_ocnn(
 
     param_groups = [{"params": ocnn_params, "lr": lr_init, "name": "ocnn"}]
 
-    # Optional encoder group for joint training (lr_encoder=0.0 => effectively frozen)
+    # Optional encoder group for joint training
     if joint:
         enc_params = list(encoder.parameters())
         param_groups.append({"params": enc_params, "lr": lr_encoder, "name": "encoder"})
 
-    # No weight decay here: L2 regularization is already part of hyperplane_loss
-    optimizer = torch.optim.Adam(param_groups, weight_decay=1e-5)
+    
+    optimizer = torch.optim.Adam(param_groups, weight_decay=0.0)
 
     history: Dict[str, list] = {"loss": [], "r": [], "violation": [], "lr_ocnn": [], "lr_enc": []}
 
@@ -191,7 +191,7 @@ def evaluate_ocnn(
     device: torch.device,
     joint: bool,
 ):
-    # Convention: anomaly_score = r - score, so larger => more anomalous
+    
     ocnn.to(device).eval()
     if encoder is not None:
         encoder.to(device).eval()
@@ -204,13 +204,13 @@ def evaluate_ocnn(
         all_s.append(score.cpu())
         all_y.append(y.cpu())
 
-    scores = torch.cat(all_s, dim=0)
-    labels = torch.cat(all_y, dim=0)
+    scores = torch.cat(all_s, dim=0).view(-1)
+    labels = torch.cat(all_y, dim=0).view(-1)
 
-    anom_scores = r - scores
+    anom_scores = scores - r
     return anom_scores, labels
 
 
-# Compute AUROC from anomaly scores (higher => more anomalous) and labels (1 => anomaly)
+# Compute AUROC from anomaly scores (higher => more normal)
 def auroc_from_scores(anom_scores: torch.Tensor, labels: torch.Tensor) -> float:
     return float(roc_auc_score(labels.numpy(), anom_scores.numpy()))

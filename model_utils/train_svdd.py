@@ -5,13 +5,8 @@ from sklearn.metrics import roc_auc_score
 from typing import Optional, Dict, Tuple
 
 
-def _extract_z(
-    encoder: nn.Module,
-    x: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Ritorna z in forma [B, D] con grafo attivo (se encoder in train e richiede grad).
-    """
+def _extract_z(encoder: nn.Module, x: torch.Tensor) -> torch.Tensor:
+    """Return latent z as [B, D] (flattening spatial dims if needed)."""
     if hasattr(encoder, "encode_flat"):
         z = encoder.encode_flat(x)
     elif hasattr(encoder, "encode"):
@@ -31,51 +26,36 @@ def init_center_c(
     device: torch.device,
     eps: float = 0.1,
 ) -> torch.Tensor:
-    """
-    Inizializza il centro c come media delle rappresentazioni z sul training set.
-    Standard DeepSVDD: evita componenti troppo vicine a 0.
-    """
+    """Initialize center c as mean of z over the training set; push near-zero components away from 0."""
     encoder.eval()
     n = 0
     c = None
 
     for x, _ in loader:
         x = x.to(device)
-        z = _extract_z(encoder, x)  # [B, D]
-        if c is None:
-            c = z.sum(dim=0)
-        else:
-            c += z.sum(dim=0)
+        z = _extract_z(encoder, x)
+        c = z.sum(dim=0) if c is None else (c + z.sum(dim=0))
         n += z.size(0)
 
     c = c / max(1, n)
 
-    # evita componenti troppo vicine a 0 (standard DeepSVDD)
     c[(c.abs() < eps) & (c < 0)] = -eps
     c[(c.abs() < eps) & (c > 0)] = eps
     return c.detach()
 
 
-def svdd_loss(
-    dist: torch.Tensor,  # [B] = ||z-c||^2
-    R: torch.Tensor,     # scalar tensor
-    nu: float,
-    objective: str,
-) -> torch.Tensor:
+def svdd_loss(dist: torch.Tensor, R: torch.Tensor, nu: float, objective: str) -> torch.Tensor:
+    """dist is ||z-c||^2 (shape [B])."""
     if objective == "one-class":
         return dist.mean()
 
-    # soft-boundary
     scores = dist - R.pow(2)
     return R.pow(2) + (1.0 / nu) * torch.relu(scores).mean()
 
 
 @torch.no_grad()
 def update_radius_R(dist_all: torch.Tensor, nu: float) -> float:
-    """
-    Paper/common impl: R^2 = (1-nu)-quantile(dist)  =>  R = sqrt(quantile(dist)).
-    dist_all: 1D tensor of distances (preferably on CPU).
-    """
+    """Set R using the (1-nu)-quantile of dist: R = sqrt(quantile(dist))."""
     q = 1.0 - nu
     return torch.quantile(dist_all, q=q).sqrt().item()
 
@@ -86,28 +66,18 @@ def train_deepsvdd(
     device: torch.device,
     objective: str = "one-class",
     nu: float = 0.1,
-    epochs: int = 50,
-    lr_encoder: float = 0.0,          # >0 => joint (aggiorna encoder durante SVDD). 0 => frozen.
+    epochs: int = 150,
+    lr_encoder: float = 0.0,
     weight_decay: float = 0.0,
-    warmup_epochs: int = 10,          # per soft-boundary
+    warmup_epochs: int = 10,
     clip_norm: float = 5.0,
     print_every: int = 10,
 ) -> Tuple[nn.Module, torch.Tensor, float, Dict[str, list]]:
-    """
-    DeepSVDD training.
-
-    Returns:
-      encoder: (potenzialmente aggiornato se joint)
-      c: center tensor [D]
-      R: float radius
-      history: dict con loss e R per epoca
-    """
+    """Train DeepSVDD; if lr_encoder==0, encoder is frozen (no updates)."""
     encoder = encoder.to(device)
-
     joint = lr_encoder > 0.0
 
     if joint:
-        # assicura che i grad siano abilitati (robusto se encoder era stato congelato altrove)
         for p in encoder.parameters():
             p.requires_grad = True
         encoder.train()
@@ -116,16 +86,13 @@ def train_deepsvdd(
             p.requires_grad = False
         encoder.eval()
 
-    # init center c (sempre senza grad)
     c = init_center_c(encoder, train_loader, device, eps=0.1)
-
-    # init R
     R = torch.tensor(0.0, device=device)
 
-    # optimizer solo se joint
-    opt = torch.optim.Adam(
-        encoder.parameters(), lr=lr_encoder, weight_decay=weight_decay
-    ) if joint else None
+    opt = (
+        torch.optim.Adam(encoder.parameters(), lr=lr_encoder, weight_decay=weight_decay)
+        if joint else None
+    )
 
     hist = {"loss": [], "R": []}
 
@@ -141,10 +108,9 @@ def train_deepsvdd(
             if joint:
                 opt.zero_grad(set_to_none=True)
 
-            z = _extract_z(encoder, x)                 # [B, D]
-            dist = ((z - c) ** 2).sum(dim=1)          # [B]
+            z = _extract_z(encoder, x)
+            dist = ((z - c) ** 2).sum(dim=1)
 
-            # warmup: se soft-boundary, spesso si ottimizza come one-class prima di aggiornare R
             use_obj = objective
             if objective == "soft-boundary" and epoch < warmup_epochs:
                 use_obj = "one-class"
@@ -163,7 +129,6 @@ def train_deepsvdd(
 
         avg_loss = total_loss / max(1, n_seen)
 
-        # update R after warmup if soft-boundary
         if objective == "soft-boundary" and epoch >= warmup_epochs:
             dist_all = torch.cat(dist_epoch, dim=0).detach().cpu()
             R_val = update_radius_R(dist_all, nu)
@@ -187,16 +152,7 @@ def eval_deepsvdd(
     device: torch.device,
     normal_class: Optional[int] = None,
 ) -> Tuple[float, torch.Tensor, torch.Tensor]:
-    """
-    Eval DeepSVDD con AUROC.
-
-    - scores: dist - R^2  (più alto => più anomalo)
-    - labels devono essere binarie: 0 normal, 1 anomaly
-
-    Se nel loader y è già binario (0/1), viene usato così.
-    Se y è multi-classe (es. CIFAR-10 0..9 o MNIST digit), serve normal_class:
-      labels = (y != normal_class).
-    """
+    """Compute AUROC using score = dist - R^2 (higher means more anomalous)."""
     encoder = encoder.to(device).eval()
     c = c.to(device)
 
@@ -206,7 +162,6 @@ def eval_deepsvdd(
         x = x.to(device)
         y = y.to(device)
 
-        # --- ensure binary labels ---
         if y.numel() > 0:
             y_unique = torch.unique(y)
             is_binary = (y_unique.numel() <= 2) and torch.all((y_unique == 0) | (y_unique == 1))
@@ -217,15 +172,14 @@ def eval_deepsvdd(
             if normal_class is None:
                 raise ValueError(
                     "eval_deepsvdd: labels are not binary but normal_class is None. "
-                    "Pass normal_class (e.g., airplane=0 for CIFAR-10) or use a one-class dataset wrapper."
+                    "Pass normal_class or use a one-class dataset wrapper."
                 )
-            y = (y != normal_class).long()  # 0 normal, 1 anomaly
+            y = (y != normal_class).long()
         else:
             y = y.long()
 
-        # --- compute scores ---
         z = _extract_z(encoder, x)
-        dist = ((z - c) ** 2).sum(dim=1)     # [B]
+        dist = ((z - c) ** 2).sum(dim=1)
         score = dist - (R ** 2)
 
         all_scores.append(score.detach().cpu())

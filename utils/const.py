@@ -1,10 +1,7 @@
 # utils/const.py
 
 class Const:
-    """
-    Global constants and default hyperparameters for
-    MNIST AE / RCAE / OCNN experiments.
-    """
+   
 
     # Dataset / images
     IMG_HGT: int = 28
@@ -15,7 +12,7 @@ class Const:
 
     # One-class MNIST setup
     NORMAL_DIGIT: int = 0
-    POLLUTION_RATE: float = 0.01
+    POLLUTION_RATE: float = 0.1
 
     # Autoencoder / encoder architecture
     LATENT_DIM: int = 32
@@ -27,12 +24,9 @@ class Const:
 
     # Autoencoder training
     AE_EPOCHS: int = 250
-    AE_LR: float = 1e-3
+    AE_LR: float = 1e-4
     AE_BATCH_SIZE: int = 128
 
-    # Robust Convolutional Autoencoder (RCAE)
-    LAMBDA_SET = (0.1,)
-    MUE: float = 0.0
 
     # OC-NN (One-Class Neural Network)
     OCNN_HIDDEN_DIM: int = 32
@@ -53,9 +47,7 @@ class Const:
     CKPT_SUBDIR: str = "checkpoints"
     PLOTS_SUBDIR: str = "plots"
 
-    # Weights & Biases
-    WANDB_ENABLED: bool = False
-    WANDB_PROJECT: str = "mnist-ocnn"
+   
 
     # Default architecture
     ae_arch: str = "autoencoder1"

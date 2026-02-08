@@ -1,23 +1,29 @@
-# data/mnist_datamodule.py
+from __future__ import annotations
+
 import random
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
-import torch
+import torch 
+import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 from torchvision import datasets, transforms
 
 
 def global_contrast_normalization(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
-    #"""Global Contrast Normalization (GCN) on a tensor image."""
-    mean = x.mean()
-    x_centered = x - mean
+    
+    #Global Contrast Normalization (GCN).
+    #Centers the image and rescales by its L2 norm.
+    
+    x_centered = x - x.mean()
     norm = torch.sqrt(torch.sum(x_centered ** 2)) + eps
     return x_centered / norm
 
 
 def rescale_to_unit_interval(x: torch.Tensor) -> torch.Tensor:
-    #"""Rescale tensor to [0, 1] using min-max normalization."""
+    
+    #Min-max rescale to [0, 1].
+    
     min_val = x.min()
     max_val = x.max()
     denom = (max_val - min_val)
@@ -27,25 +33,19 @@ def rescale_to_unit_interval(x: torch.Tensor) -> torch.Tensor:
 
 
 class OCNNTransform:
-    #"""ToTensor -> GCN -> rescale to [0, 1]."""
+    
+    #Transform pipeline:
+    #PIL -> Tensor -> GCN -> min-max to [0, 1]
+   
     def __call__(self, img) -> torch.Tensor:
-        x = transforms.functional.to_tensor(img)  # [1, 28, 28]
+        x = transforms.functional.to_tensor(img)
         x = global_contrast_normalization(x)
         x = rescale_to_unit_interval(x)
         return x
 
 
 class OneClassTrainWrapper(Dataset):
-    """
-    One-class training wrapper.
-
-    Includes:
-      - all normal samples
-      - a small pollution subset of anomalies (if enabled upstream via indices)
-
-    Returns:
-      (x, label) where label: 0 = normal, 1 = anomaly
-    """
+    
     def __init__(self, base: Dataset, indices: List[int], normal_digit: int):
         self.base = base
         self.indices = indices
@@ -61,12 +61,7 @@ class OneClassTrainWrapper(Dataset):
 
 
 class OneClassTestWrapper(Dataset):
-    """
-    One-class test wrapper.
-
-    Uses the full MNIST test set.
-    Returns (x, label) where label: 0 = normal, 1 = anomaly.
-    """
+   
     def __init__(self, base: Dataset, normal_digit: int):
         self.base = base
         self.normal = int(normal_digit)
@@ -89,49 +84,64 @@ class MNISTOneClassDataModule:
     num_workers: int = 0
     seed: int = 42
 
+    # These will be set in setup()
+    train_ds: Optional[Dataset] = None
+    test_ds: Optional[Dataset] = None
+
     def setup(self) -> None:
-        #Build train/test datasets for the one-class MNIST setting.
+       
         tfm = OCNNTransform()
 
-        train_full = datasets.MNIST(
-            root=self.data_dir, train=True, download=True, transform=tfm
-        )
-        test_full = datasets.MNIST(
-            root=self.data_dir, train=False, download=True, transform=tfm
-        )
+        train_full = datasets.MNIST(root=self.data_dir, train=True, download=True, transform=tfm)
+        test_full = datasets.MNIST(root=self.data_dir, train=False, download=True, transform=tfm)
 
-        # Collect indices for normal vs anomaly classes (on TRAIN set only)
-        normal_idx = [i for i, (_, y) in enumerate(train_full) if int(y) == int(self.normal_digit)]
-        anomaly_idx = [i for i, (_, y) in enumerate(train_full) if int(y) != int(self.normal_digit)]
+        # Use targets directly (fast; avoids iterating through the dataset)
+        targets = train_full.targets  # shape [60000]
+        normal_digit = int(self.normal_digit)
 
-        # Pollution is defined as a fraction of the normal set size
+        normal_idx = torch.where(targets == normal_digit)[0].tolist()
+        anomaly_idx = torch.where(targets != normal_digit)[0].tolist()
+
+        # Pollution count defined as a fraction of the normal set size
         n_pollution = int(len(normal_idx) * float(self.pollution_rate))
 
         rng = random.Random(self.seed)
         rng.shuffle(anomaly_idx)
         pollution_idx = anomaly_idx[:n_pollution]
 
+        # Build training indices and shuffle once for good mixing
         train_idx = normal_idx + pollution_idx
+        rng.shuffle(train_idx)
 
-        self.train_ds = OneClassTrainWrapper(train_full, train_idx, self.normal_digit)
-        self.test_ds = OneClassTestWrapper(test_full, self.normal_digit)
+        self.train_ds = OneClassTrainWrapper(train_full, train_idx, normal_digit)
+        self.test_ds = OneClassTestWrapper(test_full, normal_digit)
 
         self.n_normals = len(normal_idx)
         self.n_pollution = n_pollution
         self.n_train = len(self.train_ds)
         self.n_test = len(self.test_ds)
 
-    def train_dataloader(self) -> DataLoader:
+        print(
+            f"[MNIST-1C] normal={normal_digit} | "
+            f"train_normals={self.n_normals} | pollution={self.n_pollution} "
+            f"({self.pollution_rate:.3f}) | n_train={self.n_train} | n_test={self.n_test}"
+        )
+
+    def train_dataloader(self, shuffle: bool = True) -> DataLoader:
+        if self.train_ds is None:
+            raise RuntimeError("Call setup() before requesting dataloaders.")
         return DataLoader(
             self.train_ds,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=shuffle,
             drop_last=False,
             num_workers=self.num_workers,
             pin_memory=torch.cuda.is_available(),
         )
 
     def test_dataloader(self) -> DataLoader:
+        if self.test_ds is None:
+            raise RuntimeError("Call setup() before requesting dataloaders.")
         return DataLoader(
             self.test_ds,
             batch_size=self.batch_size,
@@ -141,10 +151,13 @@ class MNISTOneClassDataModule:
             pin_memory=torch.cuda.is_available(),
         )
 
+    @torch.no_grad()
     def collect_normal_images(self, device: torch.device) -> torch.Tensor:
-        #Collect all normal training images into a single tensor [N_norm, 1, 28, 28].
-
-        loader = self.train_dataloader()
+        """
+        Collect all *normal* training images into a single tensor [N_norm, 1, 28, 28].
+        Uses a non-shuffled loader to deterministically gather all normals.
+        """
+        loader = self.train_dataloader(shuffle=False)
         normals: List[torch.Tensor] = []
 
         for x, y in loader:
@@ -155,25 +168,26 @@ class MNISTOneClassDataModule:
         if not normals:
             raise RuntimeError("No normal samples found in training loader.")
 
-        return torch.cat(normals, dim=0).to(device)
+        return torch.cat(normals, dim=0).to(device, non_blocking=True)
 
 
 @torch.no_grad()
-def encode_dataset(ae, loader: DataLoader, device: torch.device) -> TensorDataset:
+def encode_dataset(ae: nn.Module, loader: DataLoader, device: torch.device) -> TensorDataset:
     """
     Encode an entire dataset using an autoencoder (or any module exposing encode()).
 
     Returns:
-      TensorDataset(z, y) where:
-        z: [N, rep_dim]
-        y: [N] one-class labels (0 normal, 1 anomaly)
+        TensorDataset(z, y) where:
+          z: [N, rep_dim]
+          y: [N] one-class labels (0 normal, 1 anomaly)
     """
-    ae.eval()
+    ae = ae.to(device).eval()
+
     all_z: List[torch.Tensor] = []
     all_y: List[torch.Tensor] = []
 
     for x, y in loader:
-        x = x.to(device)
+        x = x.to(device, non_blocking=True)
         z = ae.encode(x)
         all_z.append(z.detach().cpu())
         all_y.append(y.detach().cpu())
