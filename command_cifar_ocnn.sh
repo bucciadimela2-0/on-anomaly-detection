@@ -15,7 +15,7 @@ SEEDS=(42 73 17 21 9)
 echo "===== CIFAR-10 (sequential) ====="
 
 # classes: airplane, automobile, bird, cat, deer, dog, frog, horse, ship, truck
-for cls in 7 8 9; do
+for cls in 8 9; do
   for seed in "${SEEDS[@]}"; do
     echo "[CIFAR10] class=${cls} seed=${seed}"
     python main_ocnn.py \
